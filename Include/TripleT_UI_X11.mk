@@ -1,0 +1,1 @@
+TRIPLET_UI_X11_LIBS = -lTripleT_UI_X11 -lX11
