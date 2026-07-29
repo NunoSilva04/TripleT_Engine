@@ -1,0 +1,4 @@
+Lib/
+Objects/
+Tests/*.o
+Tests/main
