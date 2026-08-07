@@ -11,9 +11,12 @@ typedef struct{
     unsigned int width, height;
     unsigned int border_color, border_width;
     unsigned int background_color;
-}Triple_T_Window_Properties;
+}TripleT_Window_Properties;
 
-TripleT_Window *create_window(const Triple_T_Window_Properties t3_properties);
-void destroy_window(TripleT_Window *t3_window);
+extern TripleT_Window *t3_create_window(const TripleT_Window_Properties t3_properties);
+extern int t3_get_main_screen_width(void);
+extern int t3_get_main_screen_height(void);
+extern void t3_print_window_properties(const TripleT_Window *t3_window);
+extern void t3_destroy_window(TripleT_Window *t3_window);
 
 #endif

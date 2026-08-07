@@ -34,7 +34,7 @@ create_object_dir:
 # X11 Library Creation
 install_x11:
 	mkdir -p $(INSTALL_INC_DIR)
-	cp -r $(INCLUDE_DIR)* $(INSTALL_INC_DIR)
+	cp -r $(INCLUDE_DIR)*.h $(INCLUDE_DIR)*.mk $(INSTALL_INC_DIR)
 	cp $(LIB_DIR)*.a $(INSTALL_LIB_DIR)
 
 x11: $(X11_OBJ_FILES) 
