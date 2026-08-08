@@ -1,5 +1,5 @@
-#include "../../Include/TripleT_Input.h"
-#include "../../Include/Internals/TripleT_X11_Internal.h"
+#include "TripleT_Input.h"
+#include "../Internals/TripleT_Engine_X11_Internal.h"
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/XKBlib.h>

@@ -1,0 +1,1 @@
+TRIPLET_ENGINE_X11_LIBS = -lTripleT_Engine_X11 -lX11

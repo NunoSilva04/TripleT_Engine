@@ -1,5 +1,5 @@
-#include <TripleT_UI/TripleT_Window.h>
-#include <TripleT_UI/TripleT_Input.h>
+#include <TripleT_Engine/TripleT_Window.h>
+#include <TripleT_Engine/TripleT_Input.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>

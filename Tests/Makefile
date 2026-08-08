@@ -5,7 +5,7 @@ COMPILE_FLAGS = -Wall -Wextra
 C_FILES = $(wildcard *.c)
 OBJ_FILES = $(patsubst %.c, %.o, $(C_FILES))
 
-include TripleT_UI/TripleT_UI_X11.mk
+include TripleT_Engine/TripleT_Engine_X11.mk
 
 BIN = main
 
@@ -13,7 +13,7 @@ BIN = main
 all: $(BIN)
 
 $(BIN): $(OBJ_FILES)
-	$(CC) $(OBJ_FILES) $(TRIPLET_UI_X11_LIBS) -o $(BIN)  
+	$(CC) $(OBJ_FILES) $(TRIPLET_ENGINE_X11_LIBS) -o $(BIN)  
 
 %.o: %.c
 	$(CC) $(COMPILE_FLAGS) -c -o $@ $^

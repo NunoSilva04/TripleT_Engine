@@ -1,4 +1,4 @@
-#include "../../Include/Internals/TripleT_X11_Internal.h"
+#include "../Internals/TripleT_Engine_X11_Internal.h"
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <stdio.h>

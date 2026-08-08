@@ -1,7 +1,7 @@
 #ifndef __TRIPLET_X11_INTERNAL_H__
 #define __TRIPLET_X11_INTERNAL_H__
 
-#include "../TripleT_Window.h"
+#include "TripleT_Window.h"
 #include <X11/Xlib.h>
 
 typedef struct TripleT_Window_t{
