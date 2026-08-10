@@ -1,5 +1,6 @@
 #include <TripleT_Engine/TripleT_Window.h>
 #include <TripleT_Engine/TripleT_Input.h>
+#include <TripleT_Engine/TripleT_Graphics.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
@@ -15,12 +16,13 @@ int main(void){
     properties.border_width = 30;
     properties.border_color = 0;
     properties.background_color = 0xFFFFFFFF;
-
+    
     TripleT_Window *t3_window = t3_create_window(properties);
-    int number = 0;
-    for(int i = 0; i < 1000000000; i++)
-	number++;
-    printf("Done\n");
+
+    TripleT_Graphics_Errors t3_graphics_error;
+    TripleT_Graphics *t3_graphics = t3_init_graphics(t3_window, &t3_graphics_error);
+    if(t3_graphics == NULL)
+	printf("Graphics Error = %d", t3_graphics_error);
 
     bool running = true;
     while(running){
@@ -46,10 +48,11 @@ int main(void){
 		t3_resize_window(t3_window, t3_input.configure);
 		break;
 	}
+	t3_temp_render_fn(t3_graphics);
     }
 
-    t3_print_window_properties(t3_window);      
-    printf("Done with loop");
+    t3_destroy_graphics(t3_graphics);
     t3_destroy_window(t3_window);
+    printf("Done with loop");
     return 0;
 }

@@ -18,16 +18,21 @@ OBJ_DIR = Objects/
 # Include Directory
 INCLUDE_DIR = Include/
 
-# UI 
-# X11 
-SRC_X11_DIR = Src/UI/X11/
-X11_C_FILES = $(wildcard $(SRC_X11_DIR)*.c)
-X11_OBJ_FILES = $(patsubst $(SRC_X11_DIR)%.c, $(OBJ_DIR)%.o, $(X11_C_FILES))
 
+# X11 Variables
+# UI
+SRC_UI_X11_DIR = Src/UI/X11/
+UI_X11_C_FILES = $(wildcard $(SRC_UI_X11_DIR)*.c)
+UI_X11_OBJ_FILES = $(patsubst $(SRC_UI_X11_DIR)%.c, $(OBJ_DIR)%.o, $(UI_X11_C_FILES))
 # Graphics
-SRC_GRAPHICS_DIR = Src/Graphics/
-GRAPHICS_C_FILES = $(wildcard $(SRC_GRAPHICS_DIR)*.c)
-GRAPHICS_OBJ_FILES = $(patsubst $(SRC_GRAPHICS_DIR)%.c, $(OBJ_DIR)%.o, $(GRAPHICS_C_FILES))
+SRC_GRAPHICS_X11_DIR = Src/Graphics/X11/
+GRAPHICS_X11_C_FILES = $(wildcard $(SRC_GRAPHICS_X11_DIR)*.c)
+GRAPHICS_X11_OBJ_FILES = $(patsubst $(SRC_GRAPHICS_X11_DIR)%.c, $(OBJ_DIR)%.o, $(GRAPHICS_X11_C_FILES))
+
+
+# Wayland Variables
+# UI
+# Graphics
 
 # Help
 .DEFAULT_GOAL:= help
@@ -40,31 +45,29 @@ create_object_dir:
 	mkdir -p $(OBJ_DIR)
 
 
-# X11 Library Creation
+# TripleT_Engine Library Creation for X11 
 install_x11:
 	mkdir -p $(INSTALL_INC_DIR)
 	cp -r $(INCLUDE_DIR)*.h $(INCLUDE_DIR)*.mk $(INSTALL_INC_DIR)
 	cp $(LIB_DIR)*.a $(INSTALL_LIB_DIR)
 
-x11: $(X11_OBJ_FILES) $(GRAPHICS_OBJ_FILES)
+x11: $(UI_X11_OBJ_FILES) $(GRAPHICS_X11_OBJ_FILES)
 	mkdir -p $(LIB_DIR)
-	$(LIB_CMD) $(LIB_OP_FLAG) $(LIB_DIR)lib$(LIB_NAME)_X11.a $(X11_OBJ_FILES) $(GRAPHICS_OBJ_FILES)
+	$(LIB_CMD) $(LIB_OP_FLAG) $(LIB_DIR)lib$(LIB_NAME)_X11.a $(UI_X11_OBJ_FILES) $(GRAPHICS_X11_OBJ_FILES)
 
-$(OBJ_DIR)%.o: $(SRC_X11_DIR)%.c | create_object_dir
+$(OBJ_DIR)%.o: $(SRC_UI_X11_DIR)%.c | create_object_dir
+	$(CC) $(COMPILE_FLAGS) -c -o $@ $< 
+
+$(OBJ_DIR)%.o: $(SRC_GRAPHICS_X11_DIR)%.c | create_object_dir
 	$(CC) $(COMPILE_FLAGS) -c -o $@ $< 
 
 
-# Wayland Library Creation
+# TripleT_Engine Library Creation for Wayland
 install_wayland:
 	@echo "Not yet implemented"
 
 wayland: 
 	@echo "Not yet implemented"
-
-
-# Graphics Object Creation
-$(OBJ_DIR)%.o: $(SRC_GRAPHICS_DIR)%.c | create_object_dir
-	$(CC) $(COMPILE_FLAGS) -c -o $@ $< 
 
 
 # Cleanup
