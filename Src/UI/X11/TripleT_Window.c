@@ -70,6 +70,16 @@ void t3_print_window_properties(const TripleT_Window *t3_window){
     return;
 }
 
+void t3_resize_window(TripleT_Window *t3_window, const TripleT_Configure configure){
+    t3_window->properties.x = configure.new_x; 
+    t3_window->properties.y = configure.new_y;
+    t3_window->properties.width = configure.new_width;
+    t3_window->properties.height = configure.new_height;
+    t3_window->resized = true;
+    
+    return;
+}
+
 void t3_destroy_window(TripleT_Window *t3_window){
     XDestroyWindow(t3_window->display, t3_window->window);
     XCloseDisplay(t3_window->display);

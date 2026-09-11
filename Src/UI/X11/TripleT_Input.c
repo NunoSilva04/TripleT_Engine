@@ -93,12 +93,3 @@ void t3_get_tripleT_input(const TripleT_Window *t3_window, TripleT_Input *t3_inp
 
     return;
 }
-
-void t3_resize_window(TripleT_Window *t3_window, const TripleT_Configure configure){
-    t3_window->properties.x = configure.new_x; 
-    t3_window->properties.y = configure.new_y;
-    t3_window->properties.width = configure.new_width;
-    t3_window->properties.height = configure.new_height;
-    
-    return;
-}

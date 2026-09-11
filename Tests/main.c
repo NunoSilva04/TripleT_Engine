@@ -1,3 +1,4 @@
+#include <TripleT_Engine/TripleT_Utils.h>
 #include <TripleT_Engine/TripleT_Window.h>
 #include <TripleT_Engine/TripleT_Input.h>
 #include <TripleT_Engine/TripleT_Graphics.h>
@@ -20,7 +21,7 @@ int main(void){
     TripleT_Window *t3_window = t3_create_window(properties);
 
     TripleT_Graphics_Errors t3_graphics_error;
-    TripleT_Graphics *t3_graphics = t3_init_graphics(t3_window, &t3_graphics_error);
+    TripleT_Graphics *t3_graphics = t3_init_graphics_debug(t3_window, &t3_graphics_error);
     if(t3_graphics == NULL)
 	printf("Graphics Error = %d", t3_graphics_error);
 
@@ -48,7 +49,13 @@ int main(void){
 		t3_resize_window(t3_window, t3_input.configure);
 		break;
 	}
-	t3_temp_render_fn(t3_graphics);
+	t3_start_synchronization(t3_window, t3_graphics);
+	t3_barrier_transition(t3_graphics, TRIPLET_GRAPHICS_IMAGE_TYPE_UNDEFINED, TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL);
+	t3_begin_rendering(t3_graphics);
+	t3_clear_background(t3_graphics, (TripleT_RGB){.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.0f});
+	t3_finish_rendering(t3_graphics);
+	t3_barrier_transition(t3_graphics, TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL, TRIPLET_GRAPHICS_IMAGE_TYPE_PRESENT_SRC);
+	t3_present_graphics(t3_graphics);
     }
 
     t3_destroy_graphics(t3_graphics);

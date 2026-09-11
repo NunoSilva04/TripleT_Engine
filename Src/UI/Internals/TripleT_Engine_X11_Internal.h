@@ -3,12 +3,14 @@
 
 #include "TripleT_Window.h"
 #include <X11/Xlib.h>
+#include <stdbool.h>
 
 typedef struct TripleT_Window_t{
     Display *display;
     Window window;
     int screen_number;
     TripleT_Window_Properties properties;
+    bool resized;
 }TripleT_Window;
 
 #endif // __TRIPLET_X11_INTERNAL_H__

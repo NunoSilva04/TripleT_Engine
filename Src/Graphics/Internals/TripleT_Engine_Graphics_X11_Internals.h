@@ -53,27 +53,47 @@ typedef struct{
 
 typedef struct{
     unsigned int num_images;
+    unsigned int num_frames;
     VkImage *images;
     VkImageView *image_view;
-    VkFramebuffer *frame_buffers;
+    unsigned int image_index;
+    unsigned int frame_index;
 }Image_Info; 
 
 typedef struct{
-    unsigned int num_sync_objects;
+    VkFence *fences;
     VkSemaphore *image_available_semaphores;
     VkSemaphore *render_finished_semaphores;
-    VkFence *fences;
 }Sync_Objects_Info;
 
+typedef enum{
+    VERTEX_SHADER,
+    FRAGMENT_SHADER,
+}Shader_Type;
+
+typedef struct{
+   struct{
+	unsigned int num_shaders;
+	struct{
+	    VkShaderModule shader_module;
+	    VkPipelineShaderStageCreateInfo shader_stage_create_info;
+	    Shader_Type shader_type;
+	}*Shader_Data;
+    }Shader_Info;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline graphics_pipeline;
+}Graphics_Pipeline_Info;
+
 typedef struct TripleT_Graphics_t{
+    bool debug_enabled;
     VkInstance instance;
     VkSurfaceKHR surface;
     Device_Info device_info; 
     Commands_Info commands_info;
     Swapchain_Info swapchain_info;
-    VkRenderPass render_pass;
     Image_Info image_info;
     Sync_Objects_Info sync_objects_info;
+    Graphics_Pipeline_Info graphics_pipeline_info;
 }TripleT_Graphics;
 
 #endif // __TRIPLET_ENGINE_GRAPHICS_X11_INTERNALS_H__

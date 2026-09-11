@@ -2,6 +2,8 @@
 #include "../Internals/TripleT_Engine_Graphics_X11_Internals.h"
 #include "../../UI/Internals/TripleT_Engine_X11_Internal.h"
 #include "TripleT_Window.h"
+#include "../Internals/T3_Vertex_Shader.h"
+#include <X11/Xlib.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_xlib.h>
 #include <stdlib.h>
@@ -26,25 +28,29 @@ static bool t3_get_swapchain_surface_capabilities(TripleT_Graphics *t3_graphics)
 static bool t3_get_swapchain_device_formats(TripleT_Graphics *t3_graphics);
 static bool t3_get_swapchain_present_mode(TripleT_Graphics *t3_graphics);
 static bool t3_init_swapchain(TripleT_Graphics *t3_graphics);
-static bool t3_create_render_pass(TripleT_Graphics *t3_graphics);
 static bool t3_init_image_views(TripleT_Graphics *t3_graphics);
-static bool t3_create_frame_buffers(TripleT_Graphics *t3_graphics);
 static bool t3_create_sync_objects(TripleT_Graphics *t3_graphics);
+static bool t3_create_shader(TripleT_Graphics *t3_graphics, Shader_Type shader_type);
+static bool t3_create_graphics_pipeline(TripleT_Graphics *t3_graphics);
+
+// Graphics Rendering
+static void t3_recreate_swapchain(TripleT_Graphics *t3_graphics);
+
 // Graphics Destruction
+static void t3_destroy_graphics_pipeline(TripleT_Graphics *t3_graphics);
 static void t3_destroy_sync_objects(TripleT_Graphics *t3_graphics);
-static void t3_destroy_frame_buffers(TripleT_Graphics *t3_graphics);
 static void t3_destroy_image_views(TripleT_Graphics *t3_graphics);
-static void t3_destroy_render_pass(TripleT_Graphics *t3_graphics);
 static void t3_destroy_swapchain(TripleT_Graphics *t3_graphics);
 static void t3_destroy_command_pool_buffer(TripleT_Graphics *t3_graphics);
 static void t3_destroy_device(TripleT_Graphics *t3_graphics);
 static void t3_destroy_surface(TripleT_Graphics *t3_graphics);
 static void t3_destroy_instance(TripleT_Graphics *t3_graphics);
 
-TripleT_Graphics *t3_init_graphics(const TripleT_Window *t3_window, TripleT_Graphics_Errors *t3_graphics_error){
-    TripleT_Graphics *t3_graphics = (TripleT_Graphics *) malloc(sizeof(TripleT_Graphics));
+TripleT_Graphics *t3_init_graphics_ex(const TripleT_Window *t3_window, TripleT_Graphics_Errors *t3_graphics_error, bool debug_enabled){
+    TripleT_Graphics *t3_graphics = (TripleT_Graphics *) calloc(1, sizeof(TripleT_Graphics));
     if(t3_graphics == NULL)
 	return NULL;
+    t3_graphics->debug_enabled = debug_enabled;
     
     // Initalizing Graphics
     if(!t3_init_instance(t3_graphics)){
@@ -72,19 +78,9 @@ TripleT_Graphics *t3_init_graphics(const TripleT_Window *t3_window, TripleT_Grap
 	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_SWAPCHAIN;
 	return NULL;
     }
-    if(!t3_create_render_pass(t3_graphics)){
-	if(t3_graphics_error != NULL)
-	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_RENDER_PASS;
-	return NULL;
-    }
     if(!t3_init_image_views(t3_graphics)){
 	if(t3_graphics_error != NULL)
 	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_IMAGE_VIEW;
-	return NULL;
-    }
-    if(!t3_create_frame_buffers(t3_graphics)){
-	if(t3_graphics_error != NULL)
-	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_FRAME_BUFFER;
 	return NULL;
     }
     if(!t3_create_sync_objects(t3_graphics)){
@@ -92,16 +88,24 @@ TripleT_Graphics *t3_init_graphics(const TripleT_Window *t3_window, TripleT_Grap
 	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_SYNC_OBJECTS;
 	return NULL;
     }
+    if(!t3_create_graphics_pipeline(t3_graphics)){
+	if(t3_graphics_error != NULL)
+	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_GRAPHICS_PIPELINE;
+	return NULL;
+    }
 
     return t3_graphics;
 }
 
-void t3_temp_render_fn(TripleT_Graphics *t3_graphics){
+void t3_start_synchronization(TripleT_Window *t3_window, TripleT_Graphics *t3_graphics){
+    if(t3_window->resized == true){
+	t3_recreate_swapchain(t3_graphics);
+	t3_window->resized = false;
+    }
+
     vkWaitForFences(t3_graphics->device_info.logical_device, 1, &t3_graphics->sync_objects_info.fences[0], VK_TRUE, UINT64_MAX);
 
-    unsigned int image_index;
-
-    vkAcquireNextImageKHR(t3_graphics->device_info.logical_device, t3_graphics->swapchain_info.swapchain, UINT64_MAX, t3_graphics->sync_objects_info.image_available_semaphores[0], VK_NULL_HANDLE, &image_index);
+    vkAcquireNextImageKHR(t3_graphics->device_info.logical_device, t3_graphics->swapchain_info.swapchain, UINT64_MAX, t3_graphics->sync_objects_info.image_available_semaphores[t3_graphics->image_info.frame_index], VK_NULL_HANDLE, &t3_graphics->image_info.image_index);
 
     vkResetFences(t3_graphics->device_info.logical_device, 1, &t3_graphics->sync_objects_info.fences[0]);
 
@@ -111,57 +115,168 @@ void t3_temp_render_fn(TripleT_Graphics *t3_graphics){
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(t3_graphics->commands_info.command_buffers[0], &begin_info);
 
-    VkClearValue clear_color = {
-	.color = {{0.1f, 0.2f, 0.3f, 1.0f}}
+    return;
+}
+
+void t3_barrier_transition(TripleT_Graphics *t3_graphics, const TripleT_Graphics_Image_Type old_image_type, const TripleT_Graphics_Image_Type new_image_type){
+    VkImageMemoryBarrier2 image_barrier = {0};
+    image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    image_barrier.pNext = NULL;
+    switch(old_image_type){
+	case TRIPLET_GRAPHICS_IMAGE_TYPE_UNDEFINED:
+	    image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+	    image_barrier.srcAccessMask = VK_ACCESS_2_NONE;
+	    break;
+
+	case TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL:
+	    image_barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	    image_barrier.srcAccessMask = VK_ACCESS_2_NONE;
+	    break;
+
+	case TRIPLET_GRAPHICS_IMAGE_TYPE_PRESENT_SRC:
+	    image_barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+	    image_barrier.srcAccessMask = VK_ACCESS_2_NONE;
+	    break;
+    }
+
+    switch(new_image_type){
+	case TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL:
+	    image_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	    image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	    image_barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+	    break;
+
+	case TRIPLET_GRAPHICS_IMAGE_TYPE_PRESENT_SRC:
+	    image_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	    image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	    image_barrier.dstAccessMask = VK_ACCESS_2_NONE;
+	    break;
+    }
+    image_barrier.subresourceRange = (VkImageSubresourceRange){
+	.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+	.baseMipLevel = 0,
+	.levelCount = 1,
+	.baseArrayLayer = 0,
+	.layerCount = 1,
+    };
+    image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_barrier.image = t3_graphics->image_info.images[t3_graphics->image_info.image_index];
+
+    VkDependencyInfo dependency_info = {
+	.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+	.pNext = NULL,
+	.imageMemoryBarrierCount = 1,
+	.pImageMemoryBarriers = &image_barrier,
     };
 
-    VkRenderPassBeginInfo render_pass_info = {0};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = t3_graphics->render_pass;
-    render_pass_info.framebuffer = t3_graphics->image_info.frame_buffers[image_index];
-    render_pass_info.renderArea.offset = (VkOffset2D){0, 0};
-    render_pass_info.renderArea.extent = t3_graphics->swapchain_info.curr_image_extend;
-    render_pass_info.clearValueCount = 1;
-    render_pass_info.pClearValues = &clear_color;
+    vkCmdPipelineBarrier2(t3_graphics->commands_info.command_buffers[0], &dependency_info);
 
-    vkCmdBeginRenderPass(t3_graphics->commands_info.command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    return;
+}
 
-    vkCmdEndRenderPass(t3_graphics->commands_info.command_buffers[0]);
+void t3_begin_rendering(TripleT_Graphics *t3_graphics){
+    VkRenderingAttachmentInfo color_attachment_info = {
+	.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+	.pNext = NULL,
+	.imageView = t3_graphics->image_info.image_view[t3_graphics->image_info.image_index],
+	.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+	.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+    };
 
+    VkRenderingInfo rendering_info = {
+	.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+	.pNext = NULL,
+	.renderArea = {
+	    .offset = {0, 0},
+	    .extent = t3_graphics->swapchain_info.curr_image_extend,
+	},
+	.layerCount = 1,
+	.viewMask = 0,
+	.colorAttachmentCount = 1,
+	.pColorAttachments = &color_attachment_info,
+	.pDepthAttachment = NULL,
+	.pStencilAttachment = NULL,
+    };
+
+    vkCmdBeginRendering(t3_graphics->commands_info.command_buffers[0], &rendering_info);
+
+    return;
+}
+
+void t3_clear_background(TripleT_Graphics *t3_graphics, const TripleT_RGB background_colour){
+    VkClearAttachment clear_attachment = {
+	.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+	.colorAttachment = 0,
+	.clearValue = {
+	    .color.float32 = {
+		background_colour.r,
+		background_colour.g,
+		background_colour.b,
+		background_colour.a,
+	    },
+	},
+    };
+
+    VkClearRect clear_rect = {
+	.rect = {
+	    .offset = {0, 0},
+	    .extent = t3_graphics->swapchain_info.curr_image_extend,
+	},
+	.baseArrayLayer = 0,
+	.layerCount = 1,
+    };
+
+    vkCmdClearAttachments(t3_graphics->commands_info.command_buffers[0], 1, &clear_attachment, 1, &clear_rect);
+
+    return;
+}
+
+void t3_finish_rendering(TripleT_Graphics *t3_graphics){
+    vkCmdEndRendering(t3_graphics->commands_info.command_buffers[0]);
+
+    return;
+}
+
+void t3_present_graphics(TripleT_Graphics *t3_graphics){
     vkEndCommandBuffer(t3_graphics->commands_info.command_buffers[0]);
-
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submit_info = {0};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &t3_graphics->sync_objects_info.image_available_semaphores[0];
+    submit_info.pWaitSemaphores = &t3_graphics->sync_objects_info.image_available_semaphores[t3_graphics->image_info.frame_index];
     submit_info.pWaitDstStageMask = &wait_stage;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &t3_graphics->commands_info.command_buffers[0];
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &t3_graphics->sync_objects_info.render_finished_semaphores[0];
+    submit_info.pSignalSemaphores = &t3_graphics->sync_objects_info.render_finished_semaphores[t3_graphics->image_info.image_index];
 
     vkQueueSubmit(t3_graphics->device_info.logical_device_queue, 1, &submit_info, t3_graphics->sync_objects_info.fences[0]);
 
     VkPresentInfoKHR present_info = {0};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &t3_graphics->sync_objects_info.render_finished_semaphores[0];
+    present_info.pWaitSemaphores = &t3_graphics->sync_objects_info.render_finished_semaphores[t3_graphics->image_info.image_index];
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &t3_graphics->swapchain_info.swapchain;
-    present_info.pImageIndices = &image_index;
+    present_info.pImageIndices = &t3_graphics->image_info.image_index;
 
     vkQueuePresentKHR(t3_graphics->device_info.logical_device_queue, &present_info);
+    t3_graphics->image_info.frame_index = (t3_graphics->image_info.frame_index + 1) % t3_graphics->image_info.num_frames;
 
     return;
 }
 
 void t3_destroy_graphics(TripleT_Graphics *t3_graphics){
+    vkDeviceWaitIdle(t3_graphics->device_info.logical_device);
+    t3_destroy_graphics_pipeline(t3_graphics);
     t3_destroy_sync_objects(t3_graphics);
-    t3_destroy_frame_buffers(t3_graphics);
     t3_destroy_image_views(t3_graphics);
-    t3_destroy_render_pass(t3_graphics);
     t3_destroy_swapchain(t3_graphics);
     t3_destroy_command_pool_buffer(t3_graphics);
     t3_destroy_device(t3_graphics);
@@ -172,6 +287,122 @@ void t3_destroy_graphics(TripleT_Graphics *t3_graphics){
     return;
 }
 
+
+/*
+ *
+ * 	HELPER FUNCTIONS
+ *
+ **/
+#include <stdio.h>
+
+static VkDebugUtilsMessengerEXT messenger = NULL;
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
+	VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+	VkDebugUtilsMessageTypeFlagsEXT             message_types,
+	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+	void*                                       pUserData)
+{
+    (void) pUserData;  // This is just because i am getting annoyed at the warning generated when compiled for the unused parameter
+    printf("Severity: %d\n", message_severity);
+    printf("Type: %d\n", message_types);
+    printf("Message Id: %d\n", pCallbackData->messageIdNumber);
+    printf("Message: %s\n", pCallbackData->pMessage);
+    printf("Object count: %d\n\n", pCallbackData->objectCount);
+    for(uint32_t i = 0; i < pCallbackData->objectCount; i++){
+	VkDebugUtilsObjectNameInfoEXT object = pCallbackData->pObjects[i];
+	if(object.pObjectName == NULL) object.pObjectName = "<unnamed>";
+	printf("\tObj[%d]: type = %d, handle = 0x%llu, name = %s\n\n",
+		i,
+		object.objectType,
+		(unsigned long long)object.objectHandle,
+		object.pObjectName);
+    }
+
+    return VK_FALSE;
+}
+
+static void t3_init_debug_messenger(const VkInstance instance){
+    VkDebugUtilsMessengerCreateInfoEXT messenger_info = {0};
+    messenger_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    messenger_info.pNext = NULL;
+    messenger_info.flags = 0;
+    messenger_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT; 
+    messenger_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    messenger_info.messageType |= VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT;
+    messenger_info.pfnUserCallback = debug_callback;
+    messenger_info.pUserData = NULL;
+
+    PFN_vkCreateDebugUtilsMessengerEXT create_debug_messenger = NULL;
+    create_debug_messenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+    if(!create_debug_messenger){
+        printf("Couldn't create debug messenger\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    if(create_debug_messenger(instance, &messenger_info, NULL, &messenger) != VK_SUCCESS) 
+        exit(EXIT_FAILURE);
+    
+    //test function 
+    PFN_vkSubmitDebugUtilsMessageEXT submit_debug_message = NULL;
+    submit_debug_message = (PFN_vkSubmitDebugUtilsMessageEXT)vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT");
+    
+    if(submit_debug_message){
+        VkDebugUtilsMessengerCallbackDataEXT data = {0};
+        data.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT;
+        data.pNext = NULL;
+        data.flags = 0;
+        data.pMessageIdName = NULL;
+        data.pMessage = "Hello from debug messenger";
+        submit_debug_message(instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &data);
+    }else{
+        printf("Couldn't create test debug function\n");
+        exit(EXIT_FAILURE);
+    }
+
+    return;
+}
+
+static void t3_destroy_debug_messenger(const VkInstance instance){
+    PFN_vkDestroyDebugUtilsMessengerEXT destroy_debug_messenger = NULL;
+    destroy_debug_messenger = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+    if(!destroy_debug_messenger){
+        printf("Couldn't create destroy debug messenger\n");
+        return;
+    }
+    destroy_debug_messenger(instance, messenger, NULL);
+
+    return;
+}
+
+/*
+static bool t3_check_layer(const char *layer_name){
+    bool layers_found = false;
+    unsigned int num_layers = 0;
+    vkEnumerateInstanceLayerProperties(&num_layers, NULL);
+    if(num_layers == 0)
+        return false;
+
+    VkLayerProperties *layer_properties = (VkLayerProperties *) malloc(num_layers * sizeof(VkLayerProperties));
+    if(vkEnumerateInstanceLayerProperties(&num_layers, layer_properties) != VK_SUCCESS){
+        free(layer_properties);
+        return false;
+    }
+
+    for(unsigned int i = 0; i < num_layers && layers_found == false; i++){
+        if(strcmp(layer_properties[i].layerName, layer_name) == 0){
+            layers_found = true;
+        }
+    }
+
+    free(layer_properties);
+    return layers_found;
+}
+*/
+
 bool t3_init_instance(TripleT_Graphics *t3_graphics){
     VkApplicationInfo application_info = {0};
     application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -180,21 +411,41 @@ bool t3_init_instance(TripleT_Graphics *t3_graphics){
     application_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     application_info.pEngineName = "No engine";
     application_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    application_info.apiVersion = VK_API_VERSION_1_0;
+    application_info.apiVersion = VK_API_VERSION_1_3;
 
-    VkInstanceCreateInfo create_info = {0};
-    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    create_info.pNext = NULL;
-    create_info.flags = 0;
-    create_info.pApplicationInfo = &application_info;
-    create_info.enabledLayerCount = 0;        
-    create_info.ppEnabledLayerNames = NULL;
-    create_info.enabledExtensionCount = t3_x11_num_extensions;
-    create_info.ppEnabledExtensionNames = t3_x11_extension_names;
+    if(t3_graphics->debug_enabled == true){
+	VkInstanceCreateInfo create_info = {0};
+	create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	create_info.pNext = NULL;
+	create_info.flags = 0;
+	create_info.pApplicationInfo = &application_info;
+	create_info.enabledLayerCount = 1;        
+	// LUNARG CRASH DIAGNOSTICS DOES NOT EXITS ON CACHYOS JUST LIKE IN MACOS, WHEN REWRITING THIS SHIT SPAGHETTI CODE REMEMBER THAT
+	// TODO
+	create_info.ppEnabledLayerNames = (const char *[]){"VK_LAYER_KHRONOS_validation"}; 
+	create_info.enabledExtensionCount = 3;
+	create_info.ppEnabledExtensionNames = (const char *[]){"VK_KHR_surface", "VK_KHR_xlib_surface", "VK_EXT_debug_utils"};
+	VkResult result = vkCreateInstance(&create_info, NULL, &t3_graphics->instance);
+	if(result != VK_SUCCESS)
+	    return false;
 
-    VkResult result = vkCreateInstance(&create_info, NULL, &t3_graphics->instance);
-    if(result != VK_SUCCESS)
-	return false;
+	if(t3_graphics->debug_enabled)
+	    t3_init_debug_messenger(t3_graphics->instance);
+    }else{
+	VkInstanceCreateInfo create_info = {0};
+	create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	create_info.pNext = NULL;
+	create_info.flags = 0;
+	create_info.pApplicationInfo = &application_info;
+	create_info.enabledLayerCount = 0;        
+	create_info.ppEnabledLayerNames = NULL;
+	create_info.enabledExtensionCount = t3_x11_num_extensions;
+	create_info.ppEnabledExtensionNames = t3_x11_extension_names;
+	VkResult result = vkCreateInstance(&create_info, NULL, &t3_graphics->instance);
+	if(result != VK_SUCCESS)
+	    return false;
+    }
+
 
     return true;
 }
@@ -351,9 +602,14 @@ bool t3_init_device_get_queue_handle(TripleT_Graphics *t3_graphics){
     queue_create_info.queueCount = t3_graphics->device_info.num_queues_in_use;
     queue_create_info.pQueuePriorities = priority; 
 
+    VkPhysicalDeviceVulkan13Features vulkan_1_3_features = {0};
+    vulkan_1_3_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vulkan_1_3_features.dynamicRendering = VK_TRUE;
+    vulkan_1_3_features.synchronization2 = VK_TRUE;
+
     VkDeviceCreateInfo device_create_info = {0};
     device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    device_create_info.pNext = NULL;
+    device_create_info.pNext = &vulkan_1_3_features;
     device_create_info.flags = 0;
     device_create_info.queueCreateInfoCount = 1;
     device_create_info.pQueueCreateInfos = &queue_create_info;
@@ -536,53 +792,6 @@ static bool t3_init_swapchain(TripleT_Graphics *t3_graphics){
     return true;
 }
 
-bool t3_create_render_pass(TripleT_Graphics *t3_graphics){
-    VkAttachmentDescription attachment_description = {0};
-    attachment_description.flags = 0;
-    attachment_description.format = t3_graphics->swapchain_info.format;
-    attachment_description.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachment_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachment_description.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference color_attachment_reference = {0};
-    color_attachment_reference.attachment = 0;
-    color_attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass_reference = {0};
-    subpass_reference.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass_reference.colorAttachmentCount = 1;
-    subpass_reference.pColorAttachments = &color_attachment_reference;
-
-    // This dependency struct was added when i was creating my draw function
-    VkSubpassDependency subpass_dependency = {0};
-    subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpass_dependency.dstSubpass = 0;
-    subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpass_dependency.srcAccessMask = 0;
-    subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo render_pass_create_info = {0};
-    render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    render_pass_create_info.pNext = NULL;
-    render_pass_create_info.flags = 0;
-    render_pass_create_info.attachmentCount = 1;
-    render_pass_create_info.pAttachments = &attachment_description;
-    render_pass_create_info.subpassCount = 1;
-    render_pass_create_info.pSubpasses = &subpass_reference;
-    render_pass_create_info.dependencyCount = 1;
-    render_pass_create_info.pDependencies = &subpass_dependency;
-
-    if(vkCreateRenderPass(t3_graphics->device_info.logical_device, &render_pass_create_info, NULL, &t3_graphics->render_pass) != VK_SUCCESS) 
-        return false;
-
-    return true;
-}
-
 bool t3_init_image_views(TripleT_Graphics *t3_graphics){
     vkGetSwapchainImagesKHR(t3_graphics->device_info.logical_device, t3_graphics->swapchain_info.swapchain, &t3_graphics->image_info.num_images, NULL);
     if(t3_graphics->image_info.num_images == 0)
@@ -602,7 +811,7 @@ bool t3_init_image_views(TripleT_Graphics *t3_graphics){
         image_view_create_info.image = t3_graphics->image_info.images[i];
         image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
         image_view_create_info.format = t3_graphics->swapchain_info.format;
-        image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;    // TEST IF THIS COMPONENT COULD BE THE WAY I CHANGE THE COLOR OF MY SCREEN
+        image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY; 
         image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -615,36 +824,14 @@ bool t3_init_image_views(TripleT_Graphics *t3_graphics){
         if(vkCreateImageView(t3_graphics->device_info.logical_device, &image_view_create_info, NULL, &t3_graphics->image_info.image_view[i]) != VK_SUCCESS)
             return false;
     }
-
-    return true;
-}
-
-bool t3_create_frame_buffers(TripleT_Graphics *t3_graphics){
-    t3_graphics->image_info.frame_buffers = (VkFramebuffer *) malloc(t3_graphics->image_info.num_images * sizeof(VkFramebuffer));
-
-    for(unsigned int i = 0; i < t3_graphics->image_info.num_images; i++){
-	VkFramebufferCreateInfo frame_buffer_create_info = {0};
-	frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	frame_buffer_create_info.pNext = NULL;
-	frame_buffer_create_info.flags = 0;
-	frame_buffer_create_info.renderPass = t3_graphics->render_pass;
-	frame_buffer_create_info.attachmentCount = 1;
-	frame_buffer_create_info.pAttachments = &t3_graphics->image_info.image_view[i];
-	frame_buffer_create_info.width = t3_graphics->swapchain_info.curr_image_extend.width;
-	frame_buffer_create_info.height = t3_graphics->swapchain_info.curr_image_extend.height;
-	frame_buffer_create_info.layers = t3_graphics->swapchain_info.num_image_array_layers_used;
-
-	if(vkCreateFramebuffer(t3_graphics->device_info.logical_device, &frame_buffer_create_info, NULL, &t3_graphics->image_info.frame_buffers[i]) != VK_SUCCESS)
-            return false;
-    }
+    t3_graphics->image_info.num_frames = 2;
 
     return true;
 }
 
 bool t3_create_sync_objects(TripleT_Graphics *t3_graphics){
-    t3_graphics->sync_objects_info.num_sync_objects = 1;
-    t3_graphics->sync_objects_info.image_available_semaphores = (VkSemaphore *) malloc(t3_graphics->sync_objects_info.num_sync_objects * sizeof(VkSemaphore));
-    t3_graphics->sync_objects_info.fences = (VkFence *) malloc(t3_graphics->sync_objects_info.num_sync_objects * sizeof(VkFence));
+    t3_graphics->sync_objects_info.fences = (VkFence *) malloc(t3_graphics->commands_info.num_command_buffers * sizeof(VkFence));
+    t3_graphics->sync_objects_info.image_available_semaphores = (VkSemaphore *) malloc(t3_graphics->image_info.num_frames * sizeof(VkSemaphore));
     t3_graphics->sync_objects_info.render_finished_semaphores = (VkSemaphore *) malloc(t3_graphics->image_info.num_images * sizeof(VkSemaphore));
 
     VkSemaphoreCreateInfo semaphore_create_info = {0};
@@ -658,15 +845,17 @@ bool t3_create_sync_objects(TripleT_Graphics *t3_graphics){
     fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;    // MIGHT NEED TO CREATE IT IN THE SIGNALED STATE
 
     VkResult result;
-    for(unsigned int i = 0; i < t3_graphics->sync_objects_info.num_sync_objects; i++){
-	result = vkCreateSemaphore(t3_graphics->device_info.logical_device, &semaphore_create_info, NULL, &t3_graphics->sync_objects_info.image_available_semaphores[i]);
-	if(result != VK_SUCCESS)
-	    return false;
+
+    for(unsigned int i = 0; i < t3_graphics->commands_info.num_command_buffers; i++){
 	result = vkCreateFence(t3_graphics->device_info.logical_device, &fence_create_info, NULL, &t3_graphics->sync_objects_info.fences[i]);
 	if(result != VK_SUCCESS)
 	    return false;
     }
-
+    for(unsigned int i = 0; i < t3_graphics->image_info.num_frames; i++){
+	result = vkCreateSemaphore(t3_graphics->device_info.logical_device, &semaphore_create_info, NULL, &t3_graphics->sync_objects_info.image_available_semaphores[i]);
+	if(result != VK_SUCCESS)
+	    return false;
+    }
     for(unsigned int i = 0; i < t3_graphics->image_info.num_images; i++){
 	result = vkCreateSemaphore(t3_graphics->device_info.logical_device, &semaphore_create_info, NULL, &t3_graphics->sync_objects_info.render_finished_semaphores[i]);
 	if(result != VK_SUCCESS)
@@ -676,11 +865,62 @@ bool t3_create_sync_objects(TripleT_Graphics *t3_graphics){
     return true;
 }
 
+bool t3_create_shader(TripleT_Graphics *t3_graphics, Shader_Type shader_type){
+    static int i = 0;
+    VkShaderModuleCreateInfo shader_module_create_info = {
+	.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+	.pNext = NULL,
+	.flags = 0,
+	.pCode = T3_Vertex_Shader_data,
+	.codeSize = T3_Vertex_Shader_size,
+    };
+
+    VkResult result = vkCreateShaderModule(t3_graphics->device_info.logical_device, &shader_module_create_info, NULL, &t3_graphics->graphics_pipeline_info.Shader_Info.Shader_Data[i].shader_module);
+    if(result != VK_SUCCESS)
+	return false;
+    i++;
+
+    return true;
+}
+
+
+bool t3_create_graphics_pipeline(TripleT_Graphics *t3_graphics){
+    t3_graphics->graphics_pipeline_info.Shader_Info.num_shaders = 2;
+    t3_graphics->graphics_pipeline_info.Shader_Info.Shader_Data = malloc(t3_graphics->graphics_pipeline_info.Shader_Info.num_shaders * sizeof(*t3_graphics->graphics_pipeline_info.Shader_Info.Shader_Data));
+    if(!t3_create_shader(t3_graphics, VERTEX_SHADER))
+	return false;
+    if(!t3_create_shader(t3_graphics, VERTEX_SHADER))
+	return false;
+
+    return true;
+}
+
+void t3_recreate_swapchain(TripleT_Graphics *t3_graphics){
+    vkDeviceWaitIdle(t3_graphics->device_info.logical_device);
+    t3_destroy_image_views(t3_graphics);  
+    t3_destroy_swapchain(t3_graphics);
+    t3_init_swapchain(t3_graphics);
+    t3_init_image_views(t3_graphics);
+
+    return;
+}
+
+
+void t3_destroy_graphics_pipeline(TripleT_Graphics *t3_graphics){
+    for(unsigned int i = 0; i < t3_graphics->graphics_pipeline_info.Shader_Info.num_shaders; i++)
+	vkDestroyShaderModule(t3_graphics->device_info.logical_device, t3_graphics->graphics_pipeline_info.Shader_Info.Shader_Data[i].shader_module, NULL);
+    free(t3_graphics->graphics_pipeline_info.Shader_Info.Shader_Data);
+
+    return;
+}
+
 void t3_destroy_sync_objects(TripleT_Graphics *t3_graphics){
-    for(unsigned int i = 0; i < t3_graphics->sync_objects_info.num_sync_objects; i++){
+    for(unsigned int i = 0; i < t3_graphics->commands_info.num_command_buffers; i++)
+	vkDestroyFence(t3_graphics->device_info.logical_device, t3_graphics->sync_objects_info.fences[0], NULL);
+    
+    for(unsigned int i = 0; i < t3_graphics->image_info.num_frames; i++)
 	vkDestroySemaphore(t3_graphics->device_info.logical_device, t3_graphics->sync_objects_info.image_available_semaphores[i], NULL);
-	vkDestroyFence(t3_graphics->device_info.logical_device, t3_graphics->sync_objects_info.fences[i], NULL);
-    }
+    
     for(unsigned int i = 0; i < t3_graphics->image_info.num_images; i++)
 	vkDestroySemaphore(t3_graphics->device_info.logical_device, t3_graphics->sync_objects_info.render_finished_semaphores[i], NULL);
 
@@ -691,26 +931,12 @@ void t3_destroy_sync_objects(TripleT_Graphics *t3_graphics){
     return;
 }
 
-void t3_destroy_frame_buffers(TripleT_Graphics *t3_graphics){
-    for(unsigned int i = 0; i < t3_graphics->image_info.num_images; i++){
-	vkDestroyFramebuffer(t3_graphics->device_info.logical_device, t3_graphics->image_info.frame_buffers[i], NULL);
-    }
-    free(t3_graphics->image_info.frame_buffers);
-
-}
-
 void t3_destroy_image_views(TripleT_Graphics *t3_graphics){
     for(unsigned int i = 0; i < t3_graphics->image_info.num_images; i++){
 	vkDestroyImageView(t3_graphics->device_info.logical_device, t3_graphics->image_info.image_view[i], NULL);
     }
     free(t3_graphics->image_info.image_view);
     free(t3_graphics->image_info.images);
-
-    return;
-}
-
-void t3_destroy_render_pass(TripleT_Graphics *t3_graphics){
-    vkDestroyRenderPass(t3_graphics->device_info.logical_device, t3_graphics->render_pass, NULL);
 
     return;
 }
@@ -748,8 +974,9 @@ void t3_destroy_surface(TripleT_Graphics *t3_graphics){
 }
 
 void t3_destroy_instance(TripleT_Graphics *t3_graphics){
+    if(t3_graphics->debug_enabled)
+	t3_destroy_debug_messenger(t3_graphics->instance);
     vkDestroyInstance(t3_graphics->instance, NULL);
 
     return;
 }
-
