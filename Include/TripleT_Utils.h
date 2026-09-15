@@ -18,13 +18,18 @@ typedef struct TripleT_Point_3D{
     float x, y, z; 
 }TripleT_Point_3D;
 
+typedef struct TripleT_Vertex_3D{
+    TripleT_Point_3D position;
+    TripleT_RGB color;
+}TripleT_Vertex_3D;
+
 typedef struct TripleT_Triangle_3D{
     union{
-	TripleT_Point_3D vertices[3];
+	TripleT_Vertex_3D vertices[3];
 	struct{
-	    TripleT_Point_3D vertice_1;
-	    TripleT_Point_3D vertice_2;
-	    TripleT_Point_3D vertice_3;
+	    TripleT_Vertex_3D vertice_1;
+	    TripleT_Vertex_3D vertice_2;
+	    TripleT_Vertex_3D vertice_3;
 	};
     };
 }TripleT_Triangle_3D;

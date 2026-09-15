@@ -53,7 +53,7 @@ int main(void){
 	t3_barrier_transition(t3_graphics, TRIPLET_GRAPHICS_IMAGE_TYPE_UNDEFINED, TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL);
 	t3_begin_rendering(t3_graphics);
 	t3_clear_background(t3_graphics, (TripleT_RGB){.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.0f});
-	t3_render_triangle_temp(t3_graphics);
+	// t3_render_triangle_temp(t3_graphics);
 	t3_finish_rendering(t3_graphics);
 	t3_barrier_transition(t3_graphics, TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL, TRIPLET_GRAPHICS_IMAGE_TYPE_PRESENT_SRC);
 	t3_present_graphics(t3_graphics);

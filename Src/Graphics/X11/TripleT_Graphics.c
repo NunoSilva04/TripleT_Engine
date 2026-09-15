@@ -1,10 +1,13 @@
 #include "TripleT_Graphics.h"
 #include "../Internals/TripleT_Engine_Graphics_X11_Internals.h"
 #include "../../UI/Internals/TripleT_Engine_X11_Internal.h"
+#include "TripleT_Utils.h"
 #include "TripleT_Window.h"
+#include "../Internals/TripleT_Engine_Resource_Manager_Internals.h"
 #include "../Internals/T3_Vertex_Shader.h"
 #include "../Internals/T3_Fragment_Shader.h"
 #include <X11/Xlib.h>
+#include <stddef.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_xlib.h>
 #include <stdlib.h>
@@ -101,6 +104,10 @@ TripleT_Graphics *t3_init_graphics_ex(const TripleT_Window *t3_window, TripleT_G
 	if(t3_graphics_error != NULL)
 	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_GRAPHICS_PIPELINE;
 	return NULL;
+    }
+    if(!t3_init_resource_manager()){
+	if(t3_graphics_error != NULL)
+	    *t3_graphics_error = TRIPLET_GRAPHICS_ERROR_RESOURCE_MANAGER;
     }
 
     return t3_graphics;
@@ -304,6 +311,7 @@ void t3_present_graphics(TripleT_Graphics *t3_graphics){
 
 void t3_destroy_graphics(TripleT_Graphics *t3_graphics){
     vkDeviceWaitIdle(t3_graphics->device_info.logical_device);
+    t3_close_resource_manager();
     t3_destroy_graphics_pipeline(t3_graphics);
     t3_destroy_sync_objects(t3_graphics);
     t3_destroy_image_views(t3_graphics);
@@ -929,14 +937,35 @@ bool t3_create_shader(VkDevice logical_device, struct Shader_Data *shader_data, 
 }
 
 VkPipelineVertexInputStateCreateInfo create_vertex_input_state_info(void){
+    static VkVertexInputBindingDescription vertex_input_binding_desc = {
+	.binding = 0,
+	.stride = sizeof(TripleT_Vertex_3D),
+	.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    };
+
+    static VkVertexInputAttributeDescription vertex_input_attr_desc[2] = {
+	[0] = {
+	    .location = 0,
+	    .binding = 0,
+	    .format = VK_FORMAT_R32G32B32_SFLOAT,
+	    .offset = offsetof(TripleT_Vertex_3D, position),
+	},
+	[1] = {
+	    .location = 1,
+	    .binding = 0,
+	    .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+	    .offset = offsetof(TripleT_Vertex_3D, color),
+	},
+    };
+
     VkPipelineVertexInputStateCreateInfo vertex_state_create_info = {
 	.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 	.pNext = NULL,
 	.flags = 0,
-	.vertexBindingDescriptionCount = 0,
-	.pVertexBindingDescriptions = NULL,
-	.vertexAttributeDescriptionCount = 0,
-	.pVertexAttributeDescriptions = NULL,
+	.vertexBindingDescriptionCount = 1,
+	.pVertexBindingDescriptions = &vertex_input_binding_desc,
+	.vertexAttributeDescriptionCount = 2,
+	.pVertexAttributeDescriptions = vertex_input_attr_desc,
     };
 
     return vertex_state_create_info;

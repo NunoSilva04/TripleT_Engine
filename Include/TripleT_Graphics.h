@@ -15,6 +15,7 @@ typedef enum TripleT_Graphics_Errors{
     TRIPLET_GRAPHICS_ERROR_IMAGE_VIEW,
     TRIPLET_GRAPHICS_ERROR_SYNC_OBJECTS,
     TRIPLET_GRAPHICS_ERROR_GRAPHICS_PIPELINE,
+    TRIPLET_GRAPHICS_ERROR_RESOURCE_MANAGER,
 }TripleT_Graphics_Errors;
 
 typedef enum TripleT_Graphics_Image_Type{
