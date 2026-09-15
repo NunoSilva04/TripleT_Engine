@@ -32,6 +32,7 @@ extern void t3_start_synchronization(TripleT_Window *t3_window, TripleT_Graphics
 extern void t3_barrier_transition(TripleT_Graphics *t3_graphics, const TripleT_Graphics_Image_Type old_image_type, const TripleT_Graphics_Image_Type new_image_type);
 extern void t3_begin_rendering(TripleT_Graphics *t3_graphics);
 extern void t3_clear_background(TripleT_Graphics *t3_graphics, const TripleT_RGB background_colour);
+extern void t3_render_triangle_temp(TripleT_Graphics *t3_graphics);
 extern void t3_finish_rendering(TripleT_Graphics *t3_graphics);
 extern void t3_present_graphics(TripleT_Graphics *t3_graphics);
 extern void t3_destroy_graphics(TripleT_Graphics *t3_graphics);

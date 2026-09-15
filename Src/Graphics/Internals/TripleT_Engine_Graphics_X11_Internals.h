@@ -74,11 +74,11 @@ typedef enum{
 typedef struct{
    struct{
 	unsigned int num_shaders;
-	struct{
+	struct Shader_Data{
 	    VkShaderModule shader_module;
 	    VkPipelineShaderStageCreateInfo shader_stage_create_info;
 	    Shader_Type shader_type;
-	}*Shader_Data;
+	}*shader_data;
     }Shader_Info;
     VkPipelineLayout pipeline_layout;
     VkPipeline graphics_pipeline;
