@@ -311,7 +311,7 @@ void t3_present_graphics(TripleT_Graphics *t3_graphics){
 
 void t3_destroy_graphics(TripleT_Graphics *t3_graphics){
     vkDeviceWaitIdle(t3_graphics->device_info.logical_device);
-    t3_close_resource_manager();
+    t3_close_resource_manager(t3_graphics);
     t3_destroy_graphics_pipeline(t3_graphics);
     t3_destroy_sync_objects(t3_graphics);
     t3_destroy_image_views(t3_graphics);

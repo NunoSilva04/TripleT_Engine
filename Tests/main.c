@@ -2,7 +2,9 @@
 #include <TripleT_Engine/TripleT_Window.h>
 #include <TripleT_Engine/TripleT_Input.h>
 #include <TripleT_Engine/TripleT_Graphics.h>
+#include <TripleT_Engine/TripleT_Resource_Manager.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -24,6 +26,36 @@ int main(void){
     TripleT_Graphics *t3_graphics = t3_init_graphics_debug(t3_window, &t3_graphics_error);
     if(t3_graphics == NULL)
 	printf("Graphics Error = %d", t3_graphics_error);
+
+    TripleT_Vertex_3D vertices[3] = {
+	[0] = {
+	    .position = {.x = 0.0f, .y = -0.5f, .z = 0.0f},
+	    .color = {.r = 1.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f},
+	},
+	[1] = {
+	    .position = {.x = 0.5f, .y = 0.5f, .z = 0.0f},
+	    .color = {.r = 0.0f, .g = 1.0f, .b = 0.0f, .a = 1.0f},
+	},
+	[2] = {
+	    .position = {.x = -0.5f, .y = 0.5f, .z = 0.0f},
+	    .color = {.r = 0.0f, .g = 0.0f, .b = 1.0f, .a = 1.0f},
+	}
+    };
+    TripleT_Triangle_3D triangle = {
+	.vertice_1 = vertices[0],
+	.vertice_2 = vertices[1],
+	.vertice_3 = vertices[2],
+    };
+    TripleT_Object_Description triangle_object_description = {
+	.type = TRIPLET_OBJECT_TYPE_TRIANGLE_3D,
+	.triangle_3d = triangle,
+    };
+    TripleT_Object_Handle_Error error = 0;
+    TripleT_Object_Handle triangle_handle = t3_create_object_ex(t3_graphics, triangle_object_description, &error);
+    if(triangle_handle == TRIPLET_OBJECT_HANDLE_INVALID || error == TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS){
+	printf("Error");
+	exit(EXIT_FAILURE);
+    };
 
     bool running = true;
     while(running){
@@ -53,6 +85,7 @@ int main(void){
 	t3_barrier_transition(t3_graphics, TRIPLET_GRAPHICS_IMAGE_TYPE_UNDEFINED, TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL);
 	t3_begin_rendering(t3_graphics);
 	t3_clear_background(t3_graphics, (TripleT_RGB){.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.0f});
+	t3_render_object(t3_graphics, triangle_handle);
 	// t3_render_triangle_temp(t3_graphics);
 	t3_finish_rendering(t3_graphics);
 	t3_barrier_transition(t3_graphics, TRIPLET_GRAPHICS_IMAGE_TYPE_COLOR_ATTACHMENTE_OPTIONAL, TRIPLET_GRAPHICS_IMAGE_TYPE_PRESENT_SRC);
