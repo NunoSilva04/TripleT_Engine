@@ -7,9 +7,9 @@ This document explains how to build the project for your platform
 - [Linux](#linux)  
     - [Requirements](#requirements)  
     - [Overview](#overview)
-    - [Tutorial - How To Install The Requirements](#tutorial-how-to-install-the-requirements) 
-    - [Tutorial - How To Build](#tutorial-how-to-build) 
-    - [Tutorial - How To Use TripleT_Engine For Your Projects](#tutorial-how-to-use-tripletengine-for-your-projects) 
+    - [Tutorial - How To Install The Requirements](#tutorial---how-to-install-the-requirements)
+    - [Tutorial - How To Build TripleT_Engine](#tutorial---how-to-build-triplet_engine)
+    - [Tutorial - How To Use TripleT_Engine For Your Projects](#tutorial---how-to-use-triplet_engine-for-your-projects)
 - [MacOS](#macos)  
 
 ## Windows 

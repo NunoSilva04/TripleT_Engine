@@ -8,6 +8,7 @@
 #include <vulkan/vulkan_core.h>
 
 typedef struct{
+    TripleT_Object_Type object_type;
     VkBuffer vertex_buffer;
     VkDeviceMemory vertex_buffer_memory;
     unsigned int vertex_count;
@@ -56,33 +57,39 @@ void t3_close_resource_manager(TripleT_Graphics *t3_graphics){
  * RESOURCE MANAGER STATIC FUNCTIONS
  *
  * */
+static bool t3_create_buffer(const TripleT_Graphics *t3_graphics, unsigned long long int size, VkBufferUsageFlags usage_flags ,VkBuffer *buffer);
+static bool t3_allocate_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, VkMemoryPropertyFlags desired_memory_flags, VkDeviceMemory *memory);
+static bool t3_bind_and_map_buffer_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, const VkDeviceMemory memory, const void *data, unsigned int data_size);
+static TripleT_Object_Handle t3_create_triangle_object(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error);
 
-static TripleT_Object_Handle t3_create_triangle_object(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error){
+bool t3_create_buffer(const TripleT_Graphics *t3_graphics, unsigned long long int size, VkBufferUsageFlags usage_flags ,VkBuffer *buffer){
     VkBufferCreateInfo vertex_buffer_info = {
 	.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 	.pNext = NULL,
 	.flags = 0,
-	.size = sizeof(TripleT_Triangle_3D),
-	.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+	.size = size,
+	.usage = usage_flags,
 	.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
-    
-    VkResult result = vkCreateBuffer(t3_graphics->device_info.logical_device, &vertex_buffer_info, NULL, &t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer);
-    if(result != VK_SUCCESS){
-	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
-	return TRIPLET_OBJECT_HANDLE_INVALID;
-    }
 
+    VkResult result = vkCreateBuffer(t3_graphics->device_info.logical_device, &vertex_buffer_info, NULL, buffer);
+    if(result != VK_SUCCESS)
+	return false;
+
+    return true;
+}
+
+bool t3_allocate_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, VkMemoryPropertyFlags desired_memory_flags, VkDeviceMemory *memory){
     VkMemoryRequirements memory_requirements = {0};
-    vkGetBufferMemoryRequirements(t3_graphics->device_info.logical_device, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer, &memory_requirements);
+    vkGetBufferMemoryRequirements(t3_graphics->device_info.logical_device, buffer, &memory_requirements);
     VkPhysicalDeviceMemoryProperties physical_device_memory_properties = {0};
     vkGetPhysicalDeviceMemoryProperties(t3_graphics->device_info.physical_device, &physical_device_memory_properties);
 
-    VkMemoryPropertyFlags desired_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     unsigned int memory_type_index = 0;
     for(unsigned int i = 0; i < physical_device_memory_properties.memoryTypeCount; i++){
 	bool is_compatible = memory_requirements.memoryTypeBits & (1 << i);
-	bool has_properties = (physical_device_memory_properties.memoryTypes[i].propertyFlags & desired_flags) == desired_flags;
+	bool has_properties = (physical_device_memory_properties.memoryTypes[i].propertyFlags & desired_memory_flags) == desired_memory_flags;
+
 	if(is_compatible && has_properties){
 	    memory_type_index = i;
 	    break;
@@ -95,21 +102,48 @@ static TripleT_Object_Handle t3_create_triangle_object(const TripleT_Graphics *t
 	.allocationSize = memory_requirements.size,
 	.memoryTypeIndex = memory_type_index,
     };
-    result = vkAllocateMemory(t3_graphics->device_info.logical_device, &memory_allocate_info, NULL, &t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory);
-    if(result != VK_SUCCESS){
+
+    VkResult result = vkAllocateMemory(t3_graphics->device_info.logical_device, &memory_allocate_info, NULL, memory);
+    if(result != VK_SUCCESS)
+	return false;
+
+    return true;
+}
+
+bool t3_bind_and_map_buffer_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, const VkDeviceMemory memory, const void *data, unsigned int data_size){
+    VkResult result = vkBindBufferMemory(t3_graphics->device_info.logical_device, buffer, memory, 0);
+    if(result != VK_SUCCESS)
+	return false;
+
+    void *memory_data;
+    result = vkMapMemory(t3_graphics->device_info.logical_device, memory, 0, data_size, 0, &memory_data);
+    if(result != VK_SUCCESS)
+	return false;
+    memcpy(memory_data, data, data_size);
+    vkUnmapMemory(t3_graphics->device_info.logical_device, memory);
+
+    return true;
+}
+
+static TripleT_Object_Handle t3_create_triangle_object(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error){
+    if(!t3_create_buffer(t3_graphics, sizeof(TripleT_Triangle_3D), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer)){
 	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
 	return TRIPLET_OBJECT_HANDLE_INVALID;
     }
 
-    vkBindBufferMemory(t3_graphics->device_info.logical_device, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory, 0);
+    if(!t3_allocate_memory(t3_graphics, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory)){
+	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
+	return TRIPLET_OBJECT_HANDLE_INVALID;
+    }
 
-    void *data;
-    vkMapMemory(t3_graphics->device_info.logical_device, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory, 0, vertex_buffer_info.size, 0, &data);
-    memcpy(data, t3_object_handle_desc.triangle_3d.vertices, sizeof(TripleT_Triangle_3D));
-    vkUnmapMemory(t3_graphics->device_info.logical_device, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory);
+    if(!t3_bind_and_map_buffer_memory(t3_graphics, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory, t3_object_handle_desc.triangle_3d.vertices, sizeof(TripleT_Triangle_3D))){
+	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
+	return TRIPLET_OBJECT_HANDLE_INVALID;
+    }
 
     TripleT_Object_Handle handle = t3_resource_manager.objects_index;
     t3_resource_manager.objects[handle].object_data.vertex_count = 3;
+    t3_resource_manager.objects[handle].object_data.object_type = TRIPLET_OBJECT_TYPE_TRIANGLE_3D;
     t3_resource_manager.objects[handle].is_created = true;
     t3_resource_manager.objects_index++;
     t3_resource_manager.num_objects++;
