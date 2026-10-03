@@ -8,15 +8,15 @@
 #include <vulkan/vulkan_core.h>
 
 typedef struct{
-    TripleT_Object_Type object_type;
     VkBuffer vertex_buffer;
     VkDeviceMemory vertex_buffer_memory;
     unsigned int vertex_count;
-}TripleT_Object_Data;
+}TripleT_Object_Vertex_Data;
 
 typedef struct{
     bool is_created;
-    TripleT_Object_Data object_data;
+    TripleT_Object_Type object_type;
+    TripleT_Object_Vertex_Data *vertex_data;
 }TripleT_Object;
 
 typedef struct TripleT_Resource_Manager_t{
@@ -27,24 +27,31 @@ typedef struct TripleT_Resource_Manager_t{
 }TripleT_Resource_Manager;
 static TripleT_Resource_Manager t3_resource_manager = {0};
 
+static bool t3_init_object_data(TripleT_Object_Handle object_handle, TripleT_Object_Type object_type);
+static bool t3_create_buffer(const TripleT_Graphics *t3_graphics, unsigned long long int size, VkBufferUsageFlags usage_flags ,VkBuffer *buffer);
+static bool t3_allocate_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, VkMemoryPropertyFlags desired_memory_flags, VkDeviceMemory *memory);
+static bool t3_bind_and_map_buffer_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, const VkDeviceMemory memory, const void *data, unsigned int data_size);
+static TripleT_Object_Handle t3_create_triangle_object(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error);
+static void t3_render_triangle_object(const TripleT_Graphics *t3_graphics, TripleT_Object_Handle t3_object_handle);
+static void t3_free_object_data(TripleT_Graphics *t3_graphics, TripleT_Object_Handle object_handle);
+
+
 /*
  *
- * RESOURCE MANAGER INTERNAL FUNCTIONS
+ * RESOURCE MANAGER INTERNAL HEADER FUNCTIONS
  *
  * */
-
 bool t3_init_resource_manager(void){
     t3_resource_manager.max_num_objects = TRIPLET_RESOURCE_MANAGER_MAX_NUM_OBJECTS;
     t3_resource_manager.objects = (TripleT_Object *) calloc(TRIPLET_RESOURCE_MANAGER_MAX_NUM_OBJECTS, sizeof(TripleT_Object));
-    
+
     return true;
 } 
 
 void t3_close_resource_manager(TripleT_Graphics *t3_graphics){
     for(unsigned int i = 0; i < t3_resource_manager.max_num_objects; i++){
 	if(t3_resource_manager.objects[i].is_created == true){
-	    vkDestroyBuffer(t3_graphics->device_info.logical_device, t3_resource_manager.objects[i].object_data.vertex_buffer, NULL);
-	    vkFreeMemory(t3_graphics->device_info.logical_device, t3_resource_manager.objects[i].object_data.vertex_buffer_memory, NULL);
+	    t3_free_object_data(t3_graphics, i);
 	}
     }
     free(t3_resource_manager.objects);
@@ -52,15 +59,25 @@ void t3_close_resource_manager(TripleT_Graphics *t3_graphics){
     return;
 }
 
+
 /*
  *
  * RESOURCE MANAGER STATIC FUNCTIONS
  *
  * */
-static bool t3_create_buffer(const TripleT_Graphics *t3_graphics, unsigned long long int size, VkBufferUsageFlags usage_flags ,VkBuffer *buffer);
-static bool t3_allocate_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, VkMemoryPropertyFlags desired_memory_flags, VkDeviceMemory *memory);
-static bool t3_bind_and_map_buffer_memory(const TripleT_Graphics *t3_graphics, const VkBuffer buffer, const VkDeviceMemory memory, const void *data, unsigned int data_size);
-static TripleT_Object_Handle t3_create_triangle_object(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error);
+bool t3_init_object_data(TripleT_Object_Handle object_handle, TripleT_Object_Type object_type){
+    bool object_initialized = false;
+    switch(object_type){
+	case TRIPLET_OBJECT_TYPE_TRIANGLE_3D:
+	    t3_resource_manager.objects[object_handle].vertex_data = (TripleT_Object_Vertex_Data *) malloc(sizeof(TripleT_Object_Vertex_Data));
+	    t3_resource_manager.objects[object_handle].object_type = object_type;
+	    t3_resource_manager.objects[object_handle].vertex_data->vertex_count = 3;
+	    object_initialized = true;
+	    break;
+    }
+
+    return object_initialized;
+}
 
 bool t3_create_buffer(const TripleT_Graphics *t3_graphics, unsigned long long int size, VkBufferUsageFlags usage_flags ,VkBuffer *buffer){
     VkBufferCreateInfo vertex_buffer_info = {
@@ -126,29 +143,89 @@ bool t3_bind_and_map_buffer_memory(const TripleT_Graphics *t3_graphics, const Vk
 }
 
 static TripleT_Object_Handle t3_create_triangle_object(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error){
-    if(!t3_create_buffer(t3_graphics, sizeof(TripleT_Triangle_3D), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer)){
-	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
-	return TRIPLET_OBJECT_HANDLE_INVALID;
-    }
-
-    if(!t3_allocate_memory(t3_graphics, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory)){
-	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
-	return TRIPLET_OBJECT_HANDLE_INVALID;
-    }
-
-    if(!t3_bind_and_map_buffer_memory(t3_graphics, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer, t3_resource_manager.objects[t3_resource_manager.objects_index].object_data.vertex_buffer_memory, t3_object_handle_desc.triangle_3d.vertices, sizeof(TripleT_Triangle_3D))){
-	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
-	return TRIPLET_OBJECT_HANDLE_INVALID;
-    }
-
     TripleT_Object_Handle handle = t3_resource_manager.objects_index;
-    t3_resource_manager.objects[handle].object_data.vertex_count = 3;
-    t3_resource_manager.objects[handle].object_data.object_type = TRIPLET_OBJECT_TYPE_TRIANGLE_3D;
+    if(handle >= (int) t3_resource_manager.max_num_objects){
+	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_MAX_OBJECTS_CREATED;
+	return TRIPLET_OBJECT_HANDLE_INVALID;
+    }
+
+    if(!t3_init_object_data(handle, t3_object_handle_desc.type))
+	return TRIPLET_OBJECT_HANDLE_INVALID;
+
+    if(!t3_create_buffer(t3_graphics, sizeof(TripleT_Triangle_3D), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &t3_resource_manager.objects[handle].vertex_data->vertex_buffer)){
+	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
+	return TRIPLET_OBJECT_HANDLE_INVALID;
+    }
+
+    if(!t3_allocate_memory(t3_graphics, t3_resource_manager.objects[handle].vertex_data->vertex_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &t3_resource_manager.objects[handle].vertex_data->vertex_buffer_memory)){
+	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
+	return TRIPLET_OBJECT_HANDLE_INVALID;
+    }
+
+    if(!t3_bind_and_map_buffer_memory(t3_graphics, t3_resource_manager.objects[handle].vertex_data->vertex_buffer, t3_resource_manager.objects[handle].vertex_data->vertex_buffer_memory, t3_object_handle_desc.triangle_3D.vertices, sizeof(TripleT_Triangle_3D))){
+	*t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_INVALID_GRAPHICS;
+	return TRIPLET_OBJECT_HANDLE_INVALID;
+    }
+
     t3_resource_manager.objects[handle].is_created = true;
     t3_resource_manager.objects_index++;
     t3_resource_manager.num_objects++;
     *t3_object_handle_error = TRIPLET_OBJECT_HANDLE_ERROR_NONE;
     return handle;
+}
+
+
+static void t3_render_triangle_object(const TripleT_Graphics *t3_graphics, TripleT_Object_Handle t3_object_handle){
+    vkCmdBindPipeline(t3_graphics->commands_info.command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, t3_graphics->graphics_pipeline_info.graphics_pipeline); 
+
+    VkViewport viewport = {0};
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = (float) t3_graphics->swapchain_info.curr_image_extend.width;
+    viewport.height = (float) t3_graphics->swapchain_info.curr_image_extend.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(t3_graphics->commands_info.command_buffers[0], 0, 1, &viewport);
+
+    VkRect2D scissor = {0};
+    scissor.extent = t3_graphics->swapchain_info.curr_image_extend;
+    vkCmdSetScissor(t3_graphics->commands_info.command_buffers[0], 0, 1, &scissor);
+
+    VkBuffer buffer[] = {t3_resource_manager.objects[t3_object_handle].vertex_data->vertex_buffer};
+    VkDeviceSize offset[] = {0};
+    vkCmdBindVertexBuffers(t3_graphics->commands_info.command_buffers[0], 0, 1, buffer, offset);
+    vkCmdDraw(t3_graphics->commands_info.command_buffers[0], t3_resource_manager.objects[t3_object_handle].vertex_data->vertex_count, 1, 0, 0);
+
+    return;
+}
+
+void t3_free_object_data(TripleT_Graphics *t3_graphics, TripleT_Object_Handle object_handle){
+    TripleT_Object_Type object_type = t3_resource_manager.objects[object_handle].object_type;
+    switch(object_type){
+	case TRIPLET_OBJECT_TYPE_TRIANGLE_3D:
+	    vkDestroyBuffer(t3_graphics->device_info.logical_device, t3_resource_manager.objects[object_handle].vertex_data->vertex_buffer, NULL);
+	    vkFreeMemory(t3_graphics->device_info.logical_device, t3_resource_manager.objects[object_handle].vertex_data->vertex_buffer_memory, NULL);
+	    free(t3_resource_manager.objects[object_handle].vertex_data);
+	    break;
+    }
+
+    return;
+}
+
+
+/*
+ *
+ * RESOURCE MANAGER HEADER FUNCTIONS
+ *
+ */
+TripleT_Matrix_4D make_mat_view_collumn_major(const TripleT_Object_Camera_Description camera_description){
+	
+
+}
+
+TripleT_Matrix_4D make_mat_projection_collumn_major(const TripleT_Object_Camera_Description camera_description){
+
+
 }
 
 TripleT_Object_Handle t3_create_object_ex(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error){
@@ -175,25 +252,11 @@ TripleT_Object_Handle t3_create_object_ex(const TripleT_Graphics *t3_graphics, c
 }
 
 extern void t3_render_object(const TripleT_Graphics *t3_graphics, TripleT_Object_Handle t3_handle){
-    vkCmdBindPipeline(t3_graphics->commands_info.command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, t3_graphics->graphics_pipeline_info.graphics_pipeline); 
-
-    VkViewport viewport = {0};
-    viewport.x = 0;
-    viewport.y = 0;
-    viewport.width = (float) t3_graphics->swapchain_info.curr_image_extend.width;
-    viewport.height = (float) t3_graphics->swapchain_info.curr_image_extend.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(t3_graphics->commands_info.command_buffers[0], 0, 1, &viewport);
-
-    VkRect2D scissor = {0};
-    scissor.extent = t3_graphics->swapchain_info.curr_image_extend;
-    vkCmdSetScissor(t3_graphics->commands_info.command_buffers[0], 0, 1, &scissor);
-
-    VkBuffer buffer[] = {t3_resource_manager.objects[t3_handle].object_data.vertex_buffer};
-    VkDeviceSize offset[] = {0};
-    vkCmdBindVertexBuffers(t3_graphics->commands_info.command_buffers[0], 0, 1, buffer, offset);
-    vkCmdDraw(t3_graphics->commands_info.command_buffers[0], t3_resource_manager.objects[t3_handle].object_data.vertex_count, 1, 0, 0);
+    switch(t3_resource_manager.objects[t3_handle].object_type){
+	case TRIPLET_OBJECT_TYPE_TRIANGLE_3D:
+	    t3_render_triangle_object(t3_graphics, t3_handle);
+	    break;
+    }
 
     return;
 }
