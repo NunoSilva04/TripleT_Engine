@@ -22,6 +22,18 @@ typedef struct TripleT_Point_4D{
     float x, y, z, w;
 }TripleT_Point_4D;
 
+typedef struct TripleT_Vector_2D{
+    float x, y;
+}TripleT_Vector_2D;
+
+typedef struct TripleT_Vector_3D{
+    float x, y, z;
+}TripleT_Vector_3D;
+
+typedef struct TripleT_Vector_4D{
+    float x, y, z, w;
+}TripleT_Vector_4D;
+
 typedef struct TripleT_Vertex_3D{
     TripleT_Point_3D position;
     TripleT_RGB color;
@@ -61,5 +73,19 @@ typedef struct TripleT_Triangle_3D{
 	};
     };
 }TripleT_Triangle_3D;
+
+
+/*
+ *
+ * Math Util Functions
+ *
+ *
+ * */
+TripleT_Vector_3D t3_calculate_vector_3D(const TripleT_Point_3D point1, const TripleT_Point_3D point2);
+TripleT_Vector_3D t3_subtract_vector_3D(const TripleT_Vector_3D vector1, const TripleT_Vector_3D vector2);
+TripleT_Vector_3D t3_normalize_vector_3D(const TripleT_Vector_3D vector);
+TripleT_Vector_3D t3_cross_vector_3D(const TripleT_Vector_3D vector1, const TripleT_Vector_3D vector2);
+float t3_dot_product_3D(const TripleT_Vector_3D vector1, const TripleT_Vector_3D vector2);
+void t3_print_mat_collumn_major_4D(const TripleT_Matrix_4D matrix);
 
 #endif // __TRIPLET_UTILS_H__

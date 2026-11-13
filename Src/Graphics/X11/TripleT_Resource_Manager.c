@@ -218,14 +218,30 @@ void t3_free_object_data(TripleT_Graphics *t3_graphics, TripleT_Object_Handle ob
  * RESOURCE MANAGER HEADER FUNCTIONS
  *
  */
-TripleT_Matrix_4D make_mat_view_collumn_major(const TripleT_Object_Camera_Description camera_description){
-	
+TripleT_Matrix_4D t3_make_mat_view_collumn_major(const TripleT_Object_Camera_Description camera_description){
+    TripleT_Vector_3D camera_forward_vector = t3_calculate_vector_3D(camera_description.target, camera_description.position);
+    camera_forward_vector = t3_normalize_vector_3D(camera_forward_vector);
+    
+    TripleT_Vector_3D camera_right_vector = t3_cross_vector_3D(camera_forward_vector, camera_description.world_up_vector);
+    camera_right_vector = t3_normalize_vector_3D(camera_right_vector);
 
+    TripleT_Vector_3D camera_up_vector = t3_cross_vector_3D(camera_right_vector, camera_forward_vector);
+    camera_up_vector = t3_normalize_vector_3D(camera_up_vector);
+
+    float tx = t3_dot_product_3D(camera_right_vector, (TripleT_Vector_3D){camera_description.position.x, camera_description.position.y, camera_description.position.z});
+    float ty = t3_dot_product_3D(camera_up_vector, (TripleT_Vector_3D){camera_description.position.x, camera_description.position.y, camera_description.position.z});
+    float tz = t3_dot_product_3D(camera_forward_vector, (TripleT_Vector_3D){camera_description.position.x, camera_description.position.y, camera_description.position.z});
+
+    return (TripleT_Matrix_4D){
+	.mat_0 = {camera_right_vector.x, camera_up_vector.x, -camera_forward_vector.x, 0},
+	.mat_1 = {camera_right_vector.y, camera_up_vector.y, -camera_forward_vector.y, 0},
+	.mat_2 = {camera_right_vector.z, camera_up_vector.z, -camera_forward_vector.z, 0},
+	.mat_3 = {-tx, -ty, tz, 1},
+    };
 }
 
-TripleT_Matrix_4D make_mat_projection_collumn_major(const TripleT_Object_Camera_Description camera_description){
-
-
+TripleT_Matrix_4D t3_make_mat_projection_collumn_major(const TripleT_Object_Camera_Description camera_description){
+    
 }
 
 TripleT_Object_Handle t3_create_object_ex(const TripleT_Graphics *t3_graphics, const TripleT_Object_Description t3_object_handle_desc, TripleT_Object_Handle_Error *t3_object_handle_error){

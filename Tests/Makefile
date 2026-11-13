@@ -13,7 +13,7 @@ BIN = main
 all: $(BIN)
 
 $(BIN): $(OBJ_FILES)
-	$(CC) $(OBJ_FILES) $(TRIPLET_ENGINE_X11_LIBS) -o $(BIN)  
+	$(CC) $(OBJ_FILES) $(TRIPLET_ENGINE_X11_LIBS) -lm -o $(BIN)  
 
 %.o: %.c
 	$(CC) $(COMPILE_FLAGS) -c -o $@ $^

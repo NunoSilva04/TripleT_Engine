@@ -48,7 +48,7 @@ int main(void){
     };
     TripleT_Object_Description triangle_object_description = {
 	.type = TRIPLET_OBJECT_TYPE_TRIANGLE_3D,
-	.triangle_3d = triangle,
+	.triangle_3D = triangle,
     };
     TripleT_Object_Handle_Error error = 0;
     TripleT_Object_Handle triangle_handle = t3_create_object_ex(t3_graphics, triangle_object_description, &error);
@@ -56,6 +56,15 @@ int main(void){
 	printf("Error");
 	exit(EXIT_FAILURE);
     };
+
+    TripleT_Object_Camera_Description camera_description = {
+	.position = {0, 0, 5},
+	.target = {0, 0, 0},
+	.world_up_vector = {0, 1, 0},
+    };
+
+    camera_description.mat_view = t3_make_mat_view_collumn_major(camera_description);
+    t3_print_mat_collumn_major_4D(camera_description.mat_view);
 
     bool running = true;
     while(running){

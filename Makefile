@@ -23,6 +23,11 @@ TOOLS_DIR:= Tools/
 TOOLS_C_FILES:= $(wildcard $(TOOLS_DIR)*.c)
 SPV_TO_HEADER_TOOL:= $(TOOLS_DIR)spv_to_header
 
+# Utils
+SRC_UTILS_DIR:= Src/Utils/
+UTILS_C_FILES:= $(wildcard $(SRC_UTILS_DIR)*.c)
+UTILS_OBJ_FILES:= $(patsubst $(SRC_UTILS_DIR)%.c,$(OBJ_DIR)%.o,$(UTILS_C_FILES))
+
 
 # Shaders
 GLSLC ?= $(shell command -v glslc)
@@ -82,9 +87,12 @@ install_x11:
 	cp -r $(INCLUDE_DIR)*.h $(INCLUDE_DIR)*.mk $(INSTALL_INC_DIR)
 	cp $(LIB_DIR)*.a $(INSTALL_LIB_DIR)
 
-x11: $(UI_X11_OBJ_FILES) $(GRAPHICS_X11_OBJ_FILES)
+x11: $(UI_X11_OBJ_FILES) $(GRAPHICS_X11_OBJ_FILES) $(UTILS_OBJ_FILES)
 	mkdir -p $(LIB_DIR)
-	$(LIB_CMD) $(LIB_OP_FLAG) $(LIB_DIR)lib$(LIB_NAME)_X11.a $(UI_X11_OBJ_FILES) $(GRAPHICS_X11_OBJ_FILES)
+	$(LIB_CMD) $(LIB_OP_FLAG) $(LIB_DIR)lib$(LIB_NAME)_X11.a $(UI_X11_OBJ_FILES) $(GRAPHICS_X11_OBJ_FILES) $(UTILS_OBJ_FILES)
+
+$(OBJ_DIR)%.o: $(SRC_UTILS_DIR)%.c | create_object_dir
+	$(CC) $(COMPILE_FLAGS) -c -o $@ $<
 
 $(OBJ_DIR)%.o: $(SRC_UI_X11_DIR)%.c | create_object_dir
 	$(CC) $(COMPILE_FLAGS) -c -o $@ $< 
